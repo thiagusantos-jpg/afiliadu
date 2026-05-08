@@ -11,10 +11,20 @@ export async function GET(
 
   if (!page) notFound()
 
-  if (page.type === 'CLONE' && page.htmlContent) {
-    return new Response(page.htmlContent, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+  if (page.type === 'CLONE') {
+    if (page.htmlContent && page.htmlContent.length > 100) {
+      return new Response(page.htmlContent, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    }
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><title>${page.name}</title>
+<style>body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#555;flex-direction:column;gap:8px}</style>
+</head>
+<body><strong>Conteúdo não capturado</strong><span style="font-size:14px">O site de origem usa JavaScript para renderizar o conteúdo.<br>Delete esta página e tente novamente usando a opção <em>Avançada com IA</em>.</span></body>
+</html>`
+    return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
 
   const html = `<!DOCTYPE html>
