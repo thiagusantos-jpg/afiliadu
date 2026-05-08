@@ -72,28 +72,49 @@ export async function POST(request: Request) {
 
       htmlContent = await response.text()
 
+      // Detect empty/JS-only pages
+      const bodyText = htmlContent.replace(/<[^>]+>/g, '').trim()
+      if (htmlContent.length < 500 || bodyText.length < 100) {
+        return NextResponse.json(
+          {
+            error:
+              'O conteúdo da página parece estar vazio. Este site provavelmente usa JavaScript para renderizar o conteúdo e não pode ser clonado com a opção rápida. Tente a opção "Avançada com IA".',
+          },
+          { status: 422 }
+        )
+      }
+
       // Extract title from HTML using regex (avoiding cheerio import issues)
       const titleMatch = htmlContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
       if (titleMatch) {
         title = titleMatch[1].trim().slice(0, 100) || name
       }
 
-      // In advanced mode, do more processing
-      if (mode === 'advanced') {
-        // Make URLs absolute
-        const baseUrl = new URL(url)
-        htmlContent = htmlContent.replace(
-          /(href|src)=["'](?!https?:\/\/|data:|#|\/\/)(\.\.\/|\.\/)?([^"']*?)["']/gi,
-          (match, attr, _prefix, path) => {
-            try {
-              const absoluteUrl = new URL(path, baseUrl.origin).href
-              return `${attr}="${absoluteUrl}"`
-            } catch {
-              return match
-            }
+      // Always convert relative URLs to absolute so assets load from the original domain
+      const baseUrl = new URL(url)
+      htmlContent = htmlContent.replace(
+        /(href|src|action)=["'](?!https?:\/\/|data:|#|\/\/|mailto:|tel:)(\.\.\/|\.\/)?([^"']*?)["']/gi,
+        (match, attr, _prefix, path) => {
+          try {
+            const absoluteUrl = new URL(path || '/', baseUrl.origin).href
+            return `${attr}="${absoluteUrl}"`
+          } catch {
+            return match
           }
-        )
-      }
+        }
+      )
+
+      // Also fix url() in inline styles
+      htmlContent = htmlContent.replace(
+        /url\(['"]?(?!https?:\/\/|data:)([^'")]+)['"]?\)/gi,
+        (match, path) => {
+          try {
+            return `url("${new URL(path, baseUrl.origin).href}")`
+          } catch {
+            return match
+          }
+        }
+      )
     } catch (fetchError: any) {
       clearTimeout(timeoutId)
       if (fetchError.name === 'AbortError') {
