@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       htmlContent = await response.text()
 
       // Extract title from HTML using regex (avoiding cheerio import issues)
-      const titleMatch = htmlContent.match(/<title[^>]*>(.*?)<\/title>/is)
+      const titleMatch = htmlContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
       if (titleMatch) {
         title = titleMatch[1].trim().slice(0, 100) || name
       }
