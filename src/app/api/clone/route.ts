@@ -4,6 +4,105 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { generateSlug } from '@/lib/utils'
 
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Cache-Control': 'no-cache',
+  Pragma: 'no-cache',
+  'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"Windows"',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
+}
+
+function makeUrlsAbsolute(html: string, origin: string): string {
+  let result = html.replace(
+    /(href|src|action)=["'](?!https?:\/\/|data:|#|\/\/|mailto:|tel:)(\.\.\/|\.\/)?([^"']*?)["']/gi,
+    (match, attr, _prefix, path) => {
+      try {
+        return `${attr}="${new URL(path || '/', origin).href}"`
+      } catch {
+        return match
+      }
+    }
+  )
+  result = result.replace(
+    /url\(['"]?(?!https?:\/\/|data:)([^'")]+)['"]?\)/gi,
+    (match, path) => {
+      try {
+        return `url("${new URL(path, origin).href}")`
+      } catch {
+        return match
+      }
+    }
+  )
+  return result
+}
+
+function isContentEmpty(html: string): boolean {
+  const text = html.replace(/<[^>]+>/g, '').trim()
+  return html.length < 500 || text.length < 100
+}
+
+async function fetchViaBrowserless(url: string, signal: AbortSignal): Promise<string | null> {
+  const token = process.env.BROWSERLESS_TOKEN
+  if (!token) return null
+
+  const res = await fetch(`https://chrome.browserless.io/content?token=${token}`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, waitFor: 3000 }),
+  })
+
+  if (!res.ok) return null
+  return res.text()
+}
+
+async function fetchWithFallback(url: string, origin: string, signal: AbortSignal): Promise<string> {
+  // 1. Try direct fetch first
+  const directRes = await fetch(url, { signal, headers: { ...BROWSER_HEADERS, Referer: `${origin}/` } })
+
+  let html: string | null = null
+
+  if (directRes.ok) {
+    const text = await directRes.text()
+    if (!isContentEmpty(text)) {
+      html = text
+    }
+  }
+
+  // 2. Fallback to Browserless if direct fetch failed or returned empty content
+  if (!html) {
+    const browserHtml = await fetchViaBrowserless(url, signal).catch(() => null)
+    if (browserHtml && !isContentEmpty(browserHtml)) {
+      html = browserHtml
+    }
+  }
+
+  if (!html) {
+    if (!process.env.BROWSERLESS_TOKEN) {
+      throw new Error(
+        directRes.ok
+          ? 'O conteúdo da página parece estar vazio. Este site usa JavaScript para renderizar. Configure BROWSERLESS_TOKEN nas variáveis de ambiente para clonar este tipo de site.'
+          : `Este site bloqueou o acesso (status: ${directRes.status}). Configure BROWSERLESS_TOKEN nas variáveis de ambiente para clonar este tipo de site.`
+      )
+    }
+    throw new Error(
+      'Não foi possível capturar o conteúdo desta página. O site pode ter proteções avançadas contra clonagem.'
+    )
+  }
+
+  return makeUrlsAbsolute(html, origin)
+}
+
 const cloneSchema = z.object({
   url: z.string().url('URL inválida'),
   mode: z.enum(['quick', 'advanced']),
@@ -38,51 +137,8 @@ export async function POST(request: Request) {
 
     try {
       const parsedUrl = new URL(url)
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-          'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-          'Sec-Ch-Ua-Mobile': '?0',
-          'Sec-Ch-Ua-Platform': '"Windows"',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Upgrade-Insecure-Requests': '1',
-          Referer: `${parsedUrl.origin}/`,
-        },
-      })
-
+      htmlContent = await fetchWithFallback(url, parsedUrl.origin, controller.signal)
       clearTimeout(timeoutId)
-
-      if (!response.ok) {
-        const errorMsg =
-          response.status === 403
-            ? `Este site bloqueou o acesso automático (status: 403). Tente outro URL ou use a opção "Avançada com IA".`
-            : `Não foi possível acessar a URL (status: ${response.status})`
-        return NextResponse.json({ error: errorMsg }, { status: 422 })
-      }
-
-      htmlContent = await response.text()
-
-      // Detect empty/JS-only pages
-      const bodyText = htmlContent.replace(/<[^>]+>/g, '').trim()
-      if (htmlContent.length < 500 || bodyText.length < 100) {
-        return NextResponse.json(
-          {
-            error:
-              'O conteúdo da página parece estar vazio. Este site provavelmente usa JavaScript para renderizar o conteúdo e não pode ser clonado com a opção rápida. Tente a opção "Avançada com IA".',
-          },
-          { status: 422 }
-        )
-      }
 
       // Extract title from HTML using regex (avoiding cheerio import issues)
       const titleMatch = htmlContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
@@ -90,31 +146,6 @@ export async function POST(request: Request) {
         title = titleMatch[1].trim().slice(0, 100) || name
       }
 
-      // Always convert relative URLs to absolute so assets load from the original domain
-      const baseUrl = new URL(url)
-      htmlContent = htmlContent.replace(
-        /(href|src|action)=["'](?!https?:\/\/|data:|#|\/\/|mailto:|tel:)(\.\.\/|\.\/)?([^"']*?)["']/gi,
-        (match, attr, _prefix, path) => {
-          try {
-            const absoluteUrl = new URL(path || '/', baseUrl.origin).href
-            return `${attr}="${absoluteUrl}"`
-          } catch {
-            return match
-          }
-        }
-      )
-
-      // Also fix url() in inline styles
-      htmlContent = htmlContent.replace(
-        /url\(['"]?(?!https?:\/\/|data:)([^'")]+)['"]?\)/gi,
-        (match, path) => {
-          try {
-            return `url("${new URL(path, baseUrl.origin).href}")`
-          } catch {
-            return match
-          }
-        }
-      )
     } catch (fetchError: any) {
       clearTimeout(timeoutId)
       if (fetchError.name === 'AbortError') {
@@ -124,7 +155,7 @@ export async function POST(request: Request) {
         )
       }
       return NextResponse.json(
-        { error: 'Não foi possível acessar a URL. Verifique se ela está correta e acessível.' },
+        { error: fetchError.message ?? 'Não foi possível acessar a URL. Verifique se ela está correta e acessível.' },
         { status: 422 }
       )
     }
