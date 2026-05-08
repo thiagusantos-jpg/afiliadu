@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, Settings, Pencil, Copy, Trash2, Globe, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +23,7 @@ const PAGE_TABS = [
 ]
 
 export function PagesList() {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState('all')
   const [pages, setPages] = useState<Page[]>([])
   const [loading, setLoading] = useState(true)
@@ -170,12 +172,14 @@ export function PagesList() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         title="Configurações"
+                        onClick={() => router.push(`/pages/${page.id}/settings`)}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
                       >
                         <Settings className="h-4 w-4" />
                       </button>
                       <button
                         title="Personalizar"
+                        onClick={() => router.push(`/pages/${page.id}/settings`)}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                       >
                         <Pencil className="h-4 w-4" />
