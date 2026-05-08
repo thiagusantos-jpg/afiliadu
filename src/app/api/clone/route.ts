@@ -51,28 +51,41 @@ function isContentEmpty(html: string): boolean {
   return html.length < 500 || text.length < 100
 }
 
-async function fetchViaBrowserless(url: string, signal: AbortSignal): Promise<string | null> {
+async function fetchViaBrowserless(url: string): Promise<string | null> {
   const token = process.env.BROWSERLESS_TOKEN
   if (!token) return null
 
-  const res = await fetch(`https://chrome.browserless.io/content?token=${token}`, {
-    method: 'POST',
-    signal,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, waitFor: 3000 }),
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 45000)
 
-  if (!res.ok) return null
-  return res.text()
+  try {
+    const res = await fetch(`https://chrome.browserless.io/content?token=${token}`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        waitFor: 4000,
+        gotoOptions: { waitUntil: 'networkidle2', timeout: 30000 },
+      }),
+    })
+    if (!res.ok) {
+      console.error('[BROWSERLESS_ERROR]', res.status, await res.text())
+      return null
+    }
+    return res.text()
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 async function fetchWithFallback(url: string, origin: string, signal: AbortSignal): Promise<string> {
   // 1. Try direct fetch first
-  const directRes = await fetch(url, { signal, headers: { ...BROWSER_HEADERS, Referer: `${origin}/` } })
+  const directRes = await fetch(url, { signal, headers: { ...BROWSER_HEADERS, Referer: `${origin}/` } }).catch(() => null)
 
   let html: string | null = null
 
-  if (directRes.ok) {
+  if (directRes?.ok) {
     const text = await directRes.text()
     if (!isContentEmpty(text)) {
       html = text
@@ -81,7 +94,11 @@ async function fetchWithFallback(url: string, origin: string, signal: AbortSigna
 
   // 2. Fallback to Browserless if direct fetch failed or returned empty content
   if (!html) {
-    const browserHtml = await fetchViaBrowserless(url, signal).catch(() => null)
+    console.log('[CLONE] Direct fetch failed or empty, trying Browserless...')
+    const browserHtml = await fetchViaBrowserless(url).catch((e) => {
+      console.error('[BROWSERLESS_FETCH_ERROR]', e)
+      return null
+    })
     if (browserHtml && !isContentEmpty(browserHtml)) {
       html = browserHtml
     }
@@ -130,7 +147,7 @@ export async function POST(request: Request) {
 
     // Fetch the URL with a timeout
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     let htmlContent = ''
     let title = name
