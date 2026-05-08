@@ -115,8 +115,15 @@ export async function POST(request: Request) {
       },
       { status: 201 }
     )
-  } catch (error) {
+  } catch (error: any) {
     console.error('[CLONE_ERROR]', error)
-    return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
+    // Surface DB connection issues clearly
+    if (error?.message?.includes('DATABASE_URL') || error?.message?.includes('connect ECONNREFUSED') || error?.code === 'P1001') {
+      return NextResponse.json({ error: 'Banco de dados não configurado. Adicione DATABASE_URL nas variáveis de ambiente.' }, { status: 503 })
+    }
+    if (error?.code === 'P2002') {
+      return NextResponse.json({ error: 'Já existe uma página com esse nome. Tente outro nome.' }, { status: 409 })
+    }
+    return NextResponse.json({ error: `Erro interno: ${error?.message ?? 'desconhecido'}` }, { status: 500 })
   }
 }
