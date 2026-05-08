@@ -11,54 +11,51 @@ import {
   Megaphone,
   Rocket,
   X,
-  ChevronDown,
-  ChevronRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useState } from 'react'
 
 const navSections = [
   {
     title: 'PÁGINAS',
     items: [
-      { label: 'Minhas Páginas', href: '/dashboard/pages', icon: LayoutGrid },
+      { label: 'Minhas Páginas', href: '/pages', icon: LayoutGrid },
     ],
   },
   {
     title: 'DOMÍNIOS',
     items: [
-      { label: 'Meus Domínios', href: '/dashboard/domains', icon: Globe },
+      { label: 'Meus Domínios', href: '/domains', icon: Globe },
     ],
   },
   {
     title: 'AFILIADU PLAYER',
     items: [
-      { label: 'Meus Vídeos', href: '/dashboard/player', icon: Play },
+      { label: 'Meus Vídeos', href: '/player', icon: Play },
     ],
   },
   {
     title: 'AFILIADU SPY',
     items: [
-      { label: 'Espionar Anúncios', href: '/dashboard/spy', icon: Eye },
-      { label: 'Pesquisa Google', href: '/dashboard/spy/google', icon: Eye, badge: 'BETA' },
+      { label: 'Espionar Anúncios', href: '/spy', icon: Eye },
+      { label: 'Pesquisa Google', href: '/spy', icon: Eye, badge: 'BETA' },
     ],
   },
   {
     title: 'LEADS',
     items: [
-      { label: 'Meus Leads', href: '/dashboard/leads', icon: Users },
+      { label: 'Meus Leads', href: '/leads', icon: Users },
     ],
   },
   {
     title: 'LANÇAMENTOS',
     items: [
-      { label: 'Novidades', href: '/dashboard/launches', icon: Rocket },
+      { label: 'Novidades', href: '/launches', icon: Rocket },
     ],
   },
   {
     title: 'PROGRAMA DE AFILIADOS',
     items: [
-      { label: 'Promova e Ganhe', href: '/dashboard/affiliate', icon: Megaphone },
+      { label: 'Promova e Ganhe', href: '/affiliate', icon: Megaphone },
     ],
   },
 ]
@@ -115,10 +112,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                 const Icon = item.icon
                 const isActive =
                   pathname === item.href ||
-                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                  pathname.startsWith(item.href + '/')
                 return (
                   <Link
-                    key={item.href}
+                    key={item.href + item.label}
                     href={item.href}
                     onClick={onClose}
                     className={cn(
