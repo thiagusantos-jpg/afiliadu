@@ -6,6 +6,7 @@
  */
 
 const NEON_API_KEY = 'napi_9u5048nvtdtvxea6tml630j1i3ojwh0mn8s5qdl02ipkp6tlpmwhfomx65etq4ow'
+const ORG_ID = 'org-misty-water-96144149'
 const PROJECT_NAME = 'afiliadu'
 const REGION = 'aws-sa-east-1'
 
@@ -21,7 +22,7 @@ async function main() {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      project: { name: PROJECT_NAME, region_id: REGION, pg_version: 16 },
+      project: { name: PROJECT_NAME, region_id: REGION, pg_version: 16, org_id: ORG_ID },
     }),
   })
 
